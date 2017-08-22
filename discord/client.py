@@ -2307,7 +2307,7 @@ class Client:
             ``INVITE_SPLASH`` feature.
         region: :class:`ServerRegion`
             The new region for the server's voice communication.
-        afk_channel: :class:`Channel`
+        afk_channel: Optional[:class:`Channel`]
             The new channel that is the AFK channel. Could be ``None`` for no AFK channel.
         afk_timeout: int
             The number of seconds until someone is moved to the AFK channel.
@@ -2353,8 +2353,16 @@ class Client:
 
         fields['icon'] = icon
         fields['splash'] = splash
-        if 'afk_channel' in fields:
-            fields['afk_channel_id'] = fields['afk_channel'].id
+
+        try:
+            afk_channel = fields.pop('afk_channel')
+        except KeyError:
+            pass
+        else:
+            if afk_channel is None:
+                fields['afk_channel_id'] = afk_channel
+            else:
+                fields['afk_channel_id'] = afk_channel.id
 
         if 'owner' in fields:
             if server.owner != server.me:
@@ -3019,7 +3027,7 @@ class Client:
             overwrite = discord.PermissionOverwrite()
             overwrite.read_messages = True
             overwrite.ban_members = False
-            yield from client.edit_channel_permissions(message.channel, message.author, overwrite)
+            await client.edit_channel_permissions(message.channel, message.author, overwrite)
 
         Parameters
         -----------
@@ -3181,8 +3189,13 @@ class Client:
 
         # request joining
         yield from self.ws.voice_state(server.id, channel.id)
-        session_id_data = yield from asyncio.wait_for(session_id_future, timeout=10.0, loop=self.loop)
-        data = yield from asyncio.wait_for(voice_data_future, timeout=10.0, loop=self.loop)
+
+        try:
+            session_id_data = yield from asyncio.wait_for(session_id_future, timeout=10.0, loop=self.loop)
+            data = yield from asyncio.wait_for(voice_data_future, timeout=10.0, loop=self.loop)
+        except asyncio.TimeoutError as e:
+            yield from self.ws.voice_state(server.id, None, self_mute=True)
+            raise e
 
         kwargs = {
             'user': self.user,
