@@ -133,6 +133,11 @@ class Loop:
         if self._task:
             self._task.cancel()
 
+    def restart(self):
+        """Restarts the internal task by cancelling (if it's running), and then starting it."""
+        self.cancel()
+        self.start()
+
     def add_exception_type(self, exc):
         r"""Adds an exception type to be handled during the reconnect logic.
 
