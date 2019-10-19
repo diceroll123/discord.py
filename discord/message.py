@@ -33,10 +33,86 @@ from . import utils
 from .reaction import Reaction
 from .emoji import Emoji, PartialEmoji
 from .calls import CallMessage
-from .enums import MessageType, MessageFlags, try_enum
+from .enums import MessageType, try_enum
 from .errors import InvalidArgument, ClientException, HTTPException
 from .embeds import Embed
 from .member import Member
+
+class _flag_descriptor:
+    def __init__(self, func):
+        self.flag = func(None)
+        self.__doc__ = func.__doc__
+
+    def __get__(self, instance, owner):
+        # hacky way to return the flag value if MessageFlags is a non-instantiated object
+        if instance:
+            return instance._has_flag(self.flag)
+        return self.flag
+
+class MessageFlags:
+    """Wraps up a Discord message flag value.
+
+    .. container:: operations
+
+        .. describe:: x == y
+
+            Checks if two flags are equal.
+        .. describe:: x != y
+
+            Checks if two flags are not equal.
+        .. describe:: hash(x)
+
+               Return the flag's hash.
+
+    Attributes
+    -----------
+    value: :class:`int`
+        The raw value. This value is a bit array field of a 53-bit integer
+        representing the currently available flags. You should query
+        flags via the properties rather than using this raw value.
+    """
+    __slots__ = ('value',)
+
+    @classmethod
+    def _from_value(cls, value):
+        self = cls.__new__(cls)
+        self.value = value
+        return self
+
+    def __eq__(self, other):
+        return isinstance(other, MessageFlags) and self.value == other.value
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self.value)
+
+    def __repr__(self):
+        return '<MessageFlags value=%s>' % self.value
+
+    def _has_flag(self, o):
+        return (self.value & o) == o
+
+    @_flag_descriptor
+    def crossposted(self):
+        """:class:`bool`: A boolean indicating if the message has been published to
+        subscribed channels (via Channel Following).
+        """
+        return 1
+
+    @_flag_descriptor
+    def is_crosspost(self):
+        """:class:`bool`: A boolean indicating if the message originated from a
+        message in another channel (via Channel Following).
+        """
+        return 2
+
+    @_flag_descriptor
+    def suppress_embeds(self):
+        """:class:`bool`: A boolean indicating if the message has embeds suppressed."""
+        return 4
+
 
 class Attachment:
     """Represents an attachment from Discord.
@@ -256,6 +332,8 @@ class Message:
         - ``description``: A string representing the application's description.
         - ``icon``: A string representing the icon ID of the application.
         - ``cover_image``: A string representing the embed's image asset ID.
+    flags: :class:`MessageFlags`
+        The message's flags.
     """
 
     __slots__ = ('_edited_timestamp', 'tts', 'content', 'channel', 'webhook_id',
@@ -283,9 +361,9 @@ class Message:
         self.tts = data['tts']
         self.content = data['content']
         self.nonce = data.get('nonce')
-        self.flags = 0
+        self.flags = MessageFlags._from_value(data.get('flags', 0))
 
-        for handler in ('author', 'member', 'mentions', 'mention_roles', 'call', 'flags'):
+        for handler in ('author', 'member', 'mentions', 'mention_roles', 'call'):
             try:
                 getattr(self, '_handle_%s' % handler)(data[handler])
             except KeyError:
@@ -293,10 +371,6 @@ class Message:
 
     def __repr__(self):
         return '<Message id={0.id} channel={0.channel!r} type={0.type!r} author={0.author!r}>'.format(self)
-
-    def _has_flag(self, o):
-        v = o.value
-        return (self.flags & v) == v
 
     def _try_patch(self, data, key, transform=None):
         try:
@@ -460,9 +534,6 @@ class Message:
         call['participants'] = participants
         self.call = CallMessage(message=self, **call)
 
-    def _handle_flags(self, value):
-        self.flags = value
-
     @utils.cached_slot_property('_cs_guild')
     def guild(self):
         """Optional[:class:`Guild`]: The guild that the message belongs to, if applicable."""
@@ -574,21 +645,6 @@ class Message:
         """:class:`str`: Returns a URL that allows the client to jump to this message."""
         guild_id = getattr(self.guild, 'id', '@me')
         return 'https://discordapp.com/channels/{0}/{1.channel.id}/{1.id}'.format(guild_id, self)
-
-    @property
-    def crossposted(self):
-        """:class:`bool`: A boolean indicating if the message is crossposted."""
-        return self._has_flag(MessageFlags.crossposted)
-
-    @property
-    def is_crosspost(self):
-        """:class:`bool`: A boolean indicating if the message is a crosspost."""
-        return self._has_flag(MessageFlags.is_crosspost)
-
-    @property
-    def suppress_embeds(self):
-        """:class:`bool`: A boolean indicating if the message has embeds suppressed."""
-        return self._has_flag(MessageFlags.suppress_embeds)
 
     @utils.cached_slot_property('_cs_system_content')
     def system_content(self):
@@ -983,6 +1039,6 @@ class Message:
 
         state = self._state
         if state.is_bot:
-        self.flags |= 1 << 0
             raise ClientException('Must not be a bot account to publish messages.')
         await state.http.publish_message(self.channel.id, self.id)
+        self.flags = MessageFlags._from_value(self.flags.value ^ MessageFlags.crossposted)
