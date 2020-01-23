@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2019 Rapptz
+Copyright (c) 2015-2020 Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -43,6 +43,7 @@ from .errors import InvalidArgument
 from .object import Object
 
 DISCORD_EPOCH = 1420070400000
+MAX_ASYNCIO_SECONDS = 3456000
 
 class cached_property:
     def __init__(self, function):
@@ -180,7 +181,7 @@ def find(predicate, seq):
     """A helper to return the first element found in the sequence
     that meets the predicate. For example: ::
 
-        member = find(lambda m: m.name == 'Mighty', channel.guild.members)
+        member = discord.utils.find(lambda m: m.name == 'Mighty', channel.guild.members)
 
     would find the first :class:`~discord.Member` whose name is 'Mighty' and return it.
     If an entry is not found, then ``None`` is returned.
@@ -327,13 +328,41 @@ async def async_all(gen, *, check=_isawaitable):
             return False
     return True
 
-async def sane_wait_for(futures, *, timeout, loop):
-    done, pending = await asyncio.wait(futures, timeout=timeout, return_when=asyncio.ALL_COMPLETED, loop=loop)
+async def sane_wait_for(futures, *, timeout):
+    ensured = [
+        asyncio.ensure_future(fut) for fut in futures
+    ]
+    done, pending = await asyncio.wait(ensured, timeout=timeout, return_when=asyncio.ALL_COMPLETED)
 
     if len(pending) != 0:
         raise asyncio.TimeoutError()
 
     return done
+
+async def sleep_until(when, result=None):
+    """|coro|
+
+    Sleep until a specified time.
+
+    If the time supplied is in the past this function will yield instantly.
+
+    .. versionadded:: 1.3
+
+    Parameters
+    -----------
+    when: :class:`datetime.datetime`
+        The timestamp in which to sleep until.
+    result: Any
+        If provided is returned to the caller when the coroutine completes.
+    """
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    delta = (when - now).total_seconds()
+    while delta > MAX_ASYNCIO_SECONDS:
+        await asyncio.sleep(MAX_ASYNCIO_SECONDS)
+        delta -= MAX_ASYNCIO_SECONDS
+    return await asyncio.sleep(max(delta, 0), result)
 
 def valid_icon_size(size):
     """Icons must be power of 2 within [16, 4096]."""
@@ -438,7 +467,7 @@ def escape_markdown(text, *, as_needed=False, ignore_links=True):
     """
 
     if not as_needed:
-        url_regex = r'(?P<url>(?:https?|steam)://(?:-\.)?(?:[^\s/?\.#-]+\.?)+(?:/[^\s]*)?)'
+        url_regex = r'(?P<url><[^: >]+:\/[^ >]+>|(?:https?|steam):\/\/[^\s<]+[^<.,:;\"\'\]\s])'
         def replacement(match):
             groupdict = match.groupdict()
             is_url = groupdict.get('url')

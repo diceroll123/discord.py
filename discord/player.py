@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2019 Rapptz
+Copyright (c) 2015-2020 Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.
 """
 
 import threading
+import traceback
 import subprocess
 import audioop
 import asyncio
@@ -32,6 +33,7 @@ import logging
 import shlex
 import time
 import json
+import sys
 import re
 
 from .errors import ClientException
@@ -118,7 +120,7 @@ class FFmpegAudio(AudioSource):
     User created AudioSources using FFmpeg differently from how :class:`FFmpegPCMAudio` and
     :class:`FFmpegOpusAudio` work should subclass this.
 
-    .. versionadded:: 1.3.0
+    .. versionadded:: 1.3
     """
 
     def __init__(self, source, *, executable='ffmpeg', args, **subprocess_kwargs):
@@ -240,7 +242,7 @@ class FFmpegOpusAudio(FFmpegAudio):
     The same can be achieved by passing ``copy`` to the ``codec`` parameter, but only if you
     know that the input source is opus encoded beforehand.
 
-    .. versionadded:: 1.3.0
+    .. versionadded:: 1.3
 
     .. warning::
 
@@ -602,11 +604,20 @@ class AudioPlayer(threading.Thread):
             self._call_after()
 
     def _call_after(self):
+        error = self._current_error
+
         if self.after is not None:
             try:
-                self.after(self._current_error)
-            except Exception:
+                self.after(error)
+            except Exception as exc:
                 log.exception('Calling the after function failed.')
+                exc.__context__ = error
+                traceback.print_exception(type(exc), exc, exc.__traceback__)
+        elif error:
+            msg = 'Exception in voice thread {}'.format(self.name)
+            log.exception(msg, exc_info=error)
+            print(msg, file=sys.stderr)
+            traceback.print_exception(type(error), error, error.__traceback__)
 
     def stop(self):
         self._end.set()

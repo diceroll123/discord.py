@@ -6,7 +6,7 @@ Discord API Wrapper
 
 A basic wrapper for the Discord API.
 
-:copyright: (c) 2015-2019 Rapptz
+:copyright: (c) 2015-2020 Rapptz
 :license: MIT, see LICENSE for more details.
 
 """
@@ -14,7 +14,7 @@ A basic wrapper for the Discord API.
 __title__ = 'discord'
 __author__ = 'Rapptz'
 __license__ = 'MIT'
-__copyright__ = 'Copyright 2015-2019 Rapptz'
+__copyright__ = 'Copyright 2015-2020 Rapptz'
 __version__ = '1.3.0a'
 
 from collections import namedtuple
@@ -23,10 +23,12 @@ import logging
 from .client import Client
 from .appinfo import AppInfo
 from .user import User, ClientUser, Profile
-from .emoji import Emoji, PartialEmoji
+from .emoji import Emoji
+from .partial_emoji import PartialEmoji
 from .activity import *
 from .channel import *
-from .guild import Guild, SystemChannelFlags
+from .guild import Guild
+from .flags import SystemChannelFlags, MessageFlags
 from .relationship import Relationship
 from .member import Member, VoiceState
 from .message import Message, Attachment

@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2019 Rapptz
+Copyright (c) 2015-2020 Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -38,7 +38,7 @@ import zlib
 import websockets
 
 from . import utils
-from .activity import _ActivityTag
+from .activity import BaseActivity
 from .enums import SpeakingState
 from .errors import ConnectionClosed, InvalidArgument
 
@@ -389,13 +389,14 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
 
             if op == self.INVALIDATE_SESSION:
                 if data is True:
-                    await asyncio.sleep(5.0, loop=self.loop)
+                    await asyncio.sleep(5.0)
                     await self.close()
                     raise ResumeWebSocket(self.shard_id)
 
                 self.sequence = None
                 self.session_id = None
                 log.info('Shard ID %s session has been invalidated.', self.shard_id)
+                await asyncio.sleep(5.0)
                 await self.identify()
                 return
 
@@ -489,8 +490,8 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
 
     async def change_presence(self, *, activity=None, status=None, afk=False, since=0.0):
         if activity is not None:
-            if not isinstance(activity, _ActivityTag):
-                raise InvalidArgument('activity must be one of Game, Streaming, or Activity.')
+            if not isinstance(activity, BaseActivity):
+                raise InvalidArgument('activity must derive from BaseActivity.')
             activity = activity.to_dict()
 
         if status == 'idle':
@@ -721,9 +722,7 @@ class DiscordVoiceWebSocket(websockets.client.WebSocketClientProtocol):
         ip_end = recv.index(0, ip_start)
         state.ip = recv[ip_start:ip_end].decode('ascii')
 
-        # the port is a little endian unsigned short in the last two bytes
-        # yes, this is different endianness from everything else
-        state.port = struct.unpack_from('<H', recv, len(recv) - 2)[0]
+        state.port = struct.unpack_from('>H', recv, len(recv) - 2)[0]
         log.debug('detected ip: %s port: %s', state.ip, state.port)
 
         # there *should* always be at least one supported mode (xsalsa20_poly1305)
@@ -744,7 +743,7 @@ class DiscordVoiceWebSocket(websockets.client.WebSocketClientProtocol):
 
     async def poll_event(self):
         try:
-            msg = await asyncio.wait_for(self.recv(), timeout=30.0, loop=self.loop)
+            msg = await asyncio.wait_for(self.recv(), timeout=30.0)
             await self.received_message(json.loads(msg))
         except websockets.exceptions.ConnectionClosed as exc:
             raise ConnectionClosed(exc, shard_id=None) from exc

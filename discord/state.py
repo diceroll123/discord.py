@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2019 Rapptz
+Copyright (c) 2015-2020 Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -33,11 +33,13 @@ import logging
 import math
 import weakref
 import inspect
+import gc
 
 from .guild import Guild
-from .activity import _ActivityTag
+from .activity import BaseActivity
 from .user import User, ClientUser
-from .emoji import Emoji, PartialEmoji
+from .emoji import Emoji
+from .partial_emoji import PartialEmoji
 from .message import Message
 from .relationship import Relationship
 from .channel import *
@@ -48,6 +50,7 @@ from .enums import ChannelType, try_enum, Status, Enum
 from . import utils
 from .embeds import Embed
 from .object import Object
+from .invite import Invite
 
 class ListenerType(Enum):
     chunk = 0
@@ -81,8 +84,8 @@ class ConnectionState:
 
         activity = options.get('activity', None)
         if activity:
-            if not isinstance(activity, _ActivityTag):
-                raise TypeError('activity parameter must be one of Game, Streaming, or Activity.')
+            if not isinstance(activity, BaseActivity):
+                raise TypeError('activity parameter must derive from BaseActivity.')
 
             activity = activity.to_dict()
 
@@ -116,6 +119,11 @@ class ConnectionState:
         # extra dict to look up private channels by user id
         self._private_channels_by_user = {}
         self._messages = self.max_messages and deque(maxlen=self.max_messages)
+
+        # In cases of large deallocations the GC should be called explicitly
+        # To free the memory more immediately, especially true when it comes
+        # to reconnect loops which cause mass allocations and deallocations.
+        gc.collect()
 
     def process_listeners(self, listener_type, argument, result):
         removed = []
@@ -210,6 +218,10 @@ class ConnectionState:
 
         del guild
 
+        # Much like clear(), if we have a massive deallocation
+        # then it's better to explicitly call the GC
+        gc.collect()
+
     @property
     def emojis(self):
         return list(self._emojis.values())
@@ -293,7 +305,7 @@ class ConnectionState:
         # wait for the chunks
         if chunks:
             try:
-                await utils.sane_wait_for(chunks, timeout=len(chunks) * 30.0, loop=self.loop)
+                await utils.sane_wait_for(chunks, timeout=len(chunks) * 30.0)
             except asyncio.TimeoutError:
                 log.info('Somehow timed out waiting for chunks.')
 
@@ -312,7 +324,7 @@ class ConnectionState:
         try:
             # start the query operation
             await ws.request_chunks(guild_id, query, limit)
-            members = await asyncio.wait_for(future, timeout=5.0, loop=self.loop)
+            members = await asyncio.wait_for(future, timeout=5.0)
 
             if cache:
                 for member in members:
@@ -329,11 +341,15 @@ class ConnectionState:
 
             # only real bots wait for GUILD_CREATE streaming
             if self.is_bot:
-                while not launch.is_set():
+                while True:
                     # this snippet of code is basically waiting 2 seconds
                     # until the last GUILD_CREATE was sent
-                    launch.set()
-                    await asyncio.sleep(2, loop=self.loop)
+                    try:
+                        await asyncio.wait_for(launch.wait(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        break
+                    else:
+                        launch.clear()
 
             guilds = next(zip(*self._ready_state.guilds), [])
             if self._fetch_offline:
@@ -441,10 +457,17 @@ class ConnectionState:
             self.dispatch('raw_message_edit', raw)
 
     def parse_message_reaction_add(self, data):
-        emoji_data = data['emoji']
-        emoji_id = utils._get_as_snowflake(emoji_data, 'id')
-        emoji = PartialEmoji.with_state(self, animated=emoji_data['animated'], id=emoji_id, name=emoji_data['name'])
+        emoji = data['emoji']
+        emoji_id = utils._get_as_snowflake(emoji, 'id')
+        emoji = PartialEmoji.with_state(self, animated=emoji.get('animated', False), id=emoji_id, name=emoji['name'])
         raw = RawReactionActionEvent(data, emoji, 'REACTION_ADD')
+
+        member_data = data.get('member')
+        if member_data:
+            guild = self._get_guild(raw.guild_id)
+            raw.member = Member(data=member_data, guild=guild, state=self)
+        else:
+            raw.member = None
         self.dispatch('raw_reaction_add', raw)
 
         # rich interface here
@@ -452,7 +475,8 @@ class ConnectionState:
         if message is not None:
             emoji = self._upgrade_partial_emoji(emoji)
             reaction = message._add_reaction(data, emoji, raw.user_id)
-            user = self._get_reaction_user(message.channel, raw.user_id)
+            user = raw.member or self._get_reaction_user(message.channel, raw.user_id)
+
             if user:
                 self.dispatch('reaction_add', reaction, user)
 
@@ -467,9 +491,9 @@ class ConnectionState:
             self.dispatch('reaction_clear', message, old_reactions)
 
     def parse_message_reaction_remove(self, data):
-        emoji_data = data['emoji']
-        emoji_id = utils._get_as_snowflake(emoji_data, 'id')
-        emoji = PartialEmoji.with_state(self, animated=emoji_data['animated'], id=emoji_id, name=emoji_data['name'])
+        emoji = data['emoji']
+        emoji_id = utils._get_as_snowflake(emoji, 'id')
+        emoji = PartialEmoji.with_state(self, animated=emoji.get('animated', False), id=emoji_id, name=emoji['name'])
         raw = RawReactionActionEvent(data, emoji, 'REACTION_REMOVE')
         self.dispatch('raw_reaction_remove', raw)
 
@@ -484,6 +508,23 @@ class ConnectionState:
                 user = self._get_reaction_user(message.channel, raw.user_id)
                 if user:
                     self.dispatch('reaction_remove', reaction, user)
+
+    def parse_message_reaction_remove_emoji(self, data):
+        emoji = data['emoji']
+        emoji_id = utils._get_as_snowflake(emoji, 'id')
+        emoji = PartialEmoji.with_state(self, animated=emoji.get('animated', False), id=emoji_id, name=emoji['name'])
+        raw = RawReactionClearEmojiEvent(data, emoji)
+        self.dispatch('raw_reaction_clear_emoji', raw)
+
+        message = self._get_message(raw.message_id)
+        if message is not None:
+            try:
+                reaction = message._clear_emoji(emoji)
+            except (AttributeError, ValueError): # eventual consistency lol
+                pass
+            else:
+                if reaction:
+                    self.dispatch('reaction_clear_emoji', reaction)
 
     def parse_presence_update(self, data):
         guild_id = utils._get_as_snowflake(data, 'guild_id')
@@ -513,6 +554,14 @@ class ConnectionState:
 
     def parse_user_update(self, data):
         self.user._update(data)
+
+    def parse_invite_create(self, data):
+        invite = Invite.from_gateway(state=self, data=data)
+        self.dispatch('invite_create', invite)
+
+    def parse_invite_delete(self, data):
+        invite = Invite.from_gateway(state=self, data=data)
+        self.dispatch('invite_delete', invite)
 
     def parse_channel_delete(self, data):
         guild = self._get_guild(utils._get_as_snowflake(data, 'guild_id'))
@@ -683,7 +732,7 @@ class ConnectionState:
         await self.chunker(guild)
         if chunks:
             try:
-                await utils.sane_wait_for(chunks, timeout=len(chunks), loop=self.loop)
+                await utils.sane_wait_for(chunks, timeout=len(chunks))
             except asyncio.TimeoutError:
                 log.info('Somehow timed out waiting for chunks.')
 
@@ -710,7 +759,7 @@ class ConnectionState:
                 # so we say.
                 try:
                     state = self._ready_state
-                    state.launch.clear()
+                    state.launch.set()
                     state.guilds.append((guild, unavailable))
                 except AttributeError:
                     # the _ready_state attribute is only there during
@@ -831,7 +880,9 @@ class ConnectionState:
         log.info('Processed a chunk for %s members in guild ID %s.', len(members), guild_id)
         if self._cache_members:
             for member in members:
-                guild._add_member(member)
+                existing = guild.get_member(member.id)
+                if existing is None or existing.joined_at is None:
+                    guild._add_member(member)
 
         self.process_listeners(ListenerType.chunk, guild, len(members))
         names = [x.name.lower() for x in members]
@@ -932,7 +983,7 @@ class ConnectionState:
         try:
             return self._emojis[emoji_id]
         except KeyError:
-            return PartialEmoji(animated=data['animated'], id=emoji_id, name=data['name'])
+            return PartialEmoji(animated=data.get('animated', False), id=emoji_id, name=data['name'])
 
     def _upgrade_partial_emoji(self, emoji):
         emoji_id = emoji.id
@@ -993,37 +1044,35 @@ class AutoShardedConnectionState(ConnectionState):
         # wait for the chunks
         if chunks:
             try:
-                await utils.sane_wait_for(chunks, timeout=len(chunks) * 30.0, loop=self.loop)
+                await utils.sane_wait_for(chunks, timeout=len(chunks) * 30.0)
             except asyncio.TimeoutError:
                 log.info('Somehow timed out waiting for chunks.')
 
     async def _delay_ready(self):
         launch = self._ready_state.launch
-        while not launch.is_set():
+        while True:
             # this snippet of code is basically waiting 2 seconds
             # until the last GUILD_CREATE was sent
-            launch.set()
-            await asyncio.sleep(2.0 * self.shard_count, loop=self.loop)
+            try:
+                await asyncio.wait_for(launch.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                break
+            else:
+                launch.clear()
 
-        if self._fetch_offline:
-            guilds = sorted(self._ready_state.guilds, key=lambda g: g[0].shard_id)
+        guilds = sorted(self._ready_state.guilds, key=lambda g: g[0].shard_id)
 
-            for shard_id, sub_guilds_info in itertools.groupby(guilds, key=lambda g: g[0].shard_id):
-                sub_guilds, sub_available = zip(*sub_guilds_info)
+        for shard_id, sub_guilds_info in itertools.groupby(guilds, key=lambda g: g[0].shard_id):
+            sub_guilds, sub_available = zip(*sub_guilds_info)
+            if self._fetch_offline:
                 await self.request_offline_members(sub_guilds, shard_id=shard_id)
 
-                for guild, unavailable in zip(sub_guilds, sub_available):
-                    if unavailable is False:
-                        self.dispatch('guild_available', guild)
-                    else:
-                        self.dispatch('guild_join', guild)
-                self.dispatch('shard_ready', shard_id)
-        else:
-            for guild, unavailable in self._ready_state.guilds:
+            for guild, unavailable in zip(sub_guilds, sub_available):
                 if unavailable is False:
                     self.dispatch('guild_available', guild)
                 else:
                     self.dispatch('guild_join', guild)
+            self.dispatch('shard_ready', shard_id)
 
         # remove the state
         try:

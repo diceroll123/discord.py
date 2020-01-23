@@ -3,7 +3,7 @@
 """
 The MIT License (MIT)
 
-Copyright (c) 2015-2019 Rapptz
+Copyright (c) 2015-2020 Rapptz
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -45,7 +45,7 @@ from .member import Member
 from .errors import *
 from .enums import Status, VoiceRegion
 from .gateway import *
-from .activity import _ActivityTag, create_activity
+from .activity import BaseActivity, create_activity
 from .voice_client import VoiceClient
 from .http import HTTPClient
 from .state import ConnectionState
@@ -74,7 +74,7 @@ def _cancel_tasks(loop):
     for task in tasks:
         task.cancel()
 
-    loop.run_until_complete(asyncio.gather(*tasks, loop=loop, return_exceptions=True))
+    loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
     log.info('All tasks finished cancelling.')
 
     for task in tasks:
@@ -147,7 +147,7 @@ class Client:
         must be used to fetch the offline members of the guild.
     status: Optional[:class:`.Status`]
         A status to start your presence with upon logging on to Discord.
-    activity: Optional[Union[:class:`.Activity`, :class:`.Game`, :class:`.Streaming`]]
+    activity: Optional[:class:`BaseActivity`]
         An activity to start your presence with upon logging on to Discord.
     heartbeat_timeout: :class:`float`
         The maximum numbers of seconds before timing out and restarting the
@@ -169,7 +169,7 @@ class Client:
                     - :func:`on_member_join`
                     - :func:`on_member_remove`
 
-                - Typing events will be disabled (:func:`on_typing_start`).
+                - Typing events will be disabled (:func:`on_typing`).
                 - If ``fetch_offline_members`` is set to ``False`` then the user cache will not exist.
                   This makes it difficult or impossible to do many things, for example:
 
@@ -223,7 +223,7 @@ class Client:
 
         self._connection.shard_count = self.shard_count
         self._closed = False
-        self._ready = asyncio.Event(loop=self.loop)
+        self._ready = asyncio.Event()
         self._connection._get_websocket = lambda g: self.ws
 
         if VoiceClient.warn_nacl:
@@ -283,7 +283,7 @@ class Client:
     def cached_messages(self):
         """Sequence[:class:`.Message`]: Read-only list of messages the connected client has cached.
 
-        .. versionadded:: 1.1.0
+        .. versionadded:: 1.1
         """
         return utils.SequenceProxy(self._connection._messages or [])
 
@@ -457,7 +457,7 @@ class Client:
 
     async def _connect(self):
         coro = DiscordWebSocket.from_client(self, shard_id=self.shard_id)
-        self.ws = await asyncio.wait_for(coro, timeout=180.0, loop=self.loop)
+        self.ws = await asyncio.wait_for(coro, timeout=180.0)
         while True:
             try:
                 await self.ws.poll_event()
@@ -466,7 +466,7 @@ class Client:
                 self.dispatch('disconnect')
                 coro = DiscordWebSocket.from_client(self, shard_id=self.shard_id, session=self.ws.session_id,
                                                     sequence=self.ws.sequence, resume=True)
-                self.ws = await asyncio.wait_for(coro, timeout=180.0, loop=self.loop)
+                self.ws = await asyncio.wait_for(coro, timeout=180.0)
 
     async def connect(self, *, reconnect=True):
         """|coro|
@@ -528,7 +528,7 @@ class Client:
 
                 retry = backoff.delay()
                 log.exception("Attempting a reconnect in %.2fs", retry)
-                await asyncio.sleep(retry, loop=self.loop)
+                await asyncio.sleep(retry)
 
     async def close(self):
         """|coro|
@@ -647,7 +647,7 @@ class Client:
 
     @property
     def activity(self):
-        """Optional[Union[:class:`.Activity`, :class:`.Game`, :class:`.Streaming`]]: The activity being used upon
+        """Optional[:class:`BaseActivity`]: The activity being used upon
         logging in.
         """
         return create_activity(self._connection._activity)
@@ -656,10 +656,10 @@ class Client:
     def activity(self, value):
         if value is None:
             self._connection._activity = None
-        elif isinstance(value, _ActivityTag):
+        elif isinstance(value, BaseActivity):
             self._connection._activity = value.to_dict()
         else:
-            raise TypeError('activity must be one of Game, Streaming, or Activity.')
+            raise TypeError('activity must derive from BaseActivity.')
 
     # helpers/getters
 
@@ -866,7 +866,7 @@ class Client:
             self._listeners[ev] = listeners
 
         listeners.append((future, check))
-        return asyncio.wait_for(future, timeout, loop=self.loop)
+        return asyncio.wait_for(future, timeout)
 
     # event registration
 
@@ -904,10 +904,6 @@ class Client:
 
         Changes the client's presence.
 
-        The activity parameter is a :class:`.Activity` object (not a string) that represents
-        the activity being done currently. This could also be the slimmed down versions,
-        :class:`.Game` and :class:`.Streaming`.
-
         Example
         ---------
 
@@ -918,7 +914,7 @@ class Client:
 
         Parameters
         ----------
-        activity: Optional[Union[:class:`.Game`, :class:`.Streaming`, :class:`.Activity`]]
+        activity: Optional[:class:`BaseActivity`]
             The activity being done. ``None`` if no currently active activity is done.
         status: Optional[:class:`.Status`]
             Indicates what status to change to. If ``None``, then
@@ -1287,7 +1283,7 @@ class Client:
 
             This method is an API call. For general usage, consider :meth:`get_channel` instead.
 
-        .. versionadded:: 1.2.0
+        .. versionadded:: 1.2
 
         Raises
         -------
