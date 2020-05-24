@@ -328,7 +328,7 @@ to handle it, which defaults to print a traceback and ignoring the exception.
     it can be accessed via :attr:`RawMessageUpdateEvent.cached_message`
 
     Due to the inherently raw nature of this event, the data parameter coincides with
-    the raw data given by the `gateway <https://discordapp.com/developers/docs/topics/gateway#message-update>`_.
+    the raw data given by the `gateway <https://discord.com/developers/docs/topics/gateway#message-update>`_.
 
     Since the data payload can be partial, care must be taken when accessing stuff in the dictionary.
     One example of a common case of partial data is when the ``'content'`` key is inaccessible. This
@@ -649,6 +649,7 @@ to handle it, which defaults to print a traceback and ignoring the exception.
 .. function:: on_invite_create(invite)
 
     Called when an :class:`Invite` is created.
+    You must have the :attr:`~Permissions.manage_channels` permission to receive this.
 
     .. versionadded:: 1.3
 
@@ -663,6 +664,7 @@ to handle it, which defaults to print a traceback and ignoring the exception.
 .. function:: on_invite_delete(invite)
 
     Called when an :class:`Invite` is deleted.
+    You must have the :attr:`~Permissions.manage_channels` permission to receive this.
 
     .. versionadded:: 1.3
 
@@ -816,6 +818,9 @@ of :class:`enum.Enum`.
     .. attribute:: group
 
         A private group text channel.
+    .. attribute:: category
+
+        A category channel.
     .. attribute:: news
 
         A guild news channel.
@@ -1047,6 +1052,12 @@ of :class:`enum.Enum`.
     .. attribute:: double_table_flip
 
         An alias for :attr:`extreme`.
+
+    .. attribute:: very_high
+
+        An alias for :attr:`extreme`.
+
+        .. versionadded:: 1.4
 
 .. class:: NotificationLevel
 
@@ -1548,7 +1559,7 @@ of :class:`enum.Enum`.
         Messages were bulk deleted by a moderator.
 
         When this is the action, the type of :attr:`~AuditLogEntry.target` is
-		the :class:`TextChannel` or :class:`Object` with the ID of the channel that was purged.
+        the :class:`TextChannel` or :class:`Object` with the ID of the channel that was purged.
 
         When this is the action, the type of :attr:`~AuditLogEntry.extra` is
         set to an unspecified proxy object with one attribute:
@@ -1760,17 +1771,17 @@ of :class:`enum.Enum`.
 
 .. class:: WebhookType
 
-	Represents the type of webhook that can be received.
+    Represents the type of webhook that can be received.
 
     .. versionadded:: 1.3
 
-	.. attribute:: incoming
+    .. attribute:: incoming
 
-		Represents a webhook that can post messages to channels with a token.
+        Represents a webhook that can post messages to channels with a token.
 
-	.. attribute:: channel_follower
+    .. attribute:: channel_follower
 
-		Represents a webhook that is internally managed by Discord, used for following channels.
+        Represents a webhook that is internally managed by Discord, used for following channels.
 
 Async Iterator
 ----------------
@@ -2564,6 +2575,12 @@ Embed
 .. autoclass:: Embed
     :members:
 
+AllowedMentions
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: AllowedMentions
+    :members:
+
 File
 ~~~~~
 
@@ -2628,7 +2645,7 @@ MessageFlags
 ~~~~~~~~~~~~
 
 .. autoclass:: MessageFlags
-	:members:
+    :members:
 
 
 Exceptions

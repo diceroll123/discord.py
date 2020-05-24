@@ -57,7 +57,6 @@ try:
 except ImportError:
     has_nacl = False
 
-
 log = logging.getLogger(__name__)
 
 class VoiceClient:
@@ -162,6 +161,7 @@ class VoiceClient:
         guild_id, channel_id = self.channel._get_voice_state_pair()
         self._handshake_complete.clear()
         await self.main_ws.voice_state(guild_id, None, self_mute=True)
+        self._handshaking = False
 
         log.info('The voice handshake is being terminated for Channel ID %s (Guild ID %s)', channel_id, guild_id)
         if remove:
@@ -206,6 +206,22 @@ class VoiceClient:
             return
 
         self._handshake_complete.set()
+
+    @property
+    def latency(self):
+        """:class:`float`: Latency between a HEARTBEAT and a HEARTBEAT_ACK in seconds.
+
+        This could be referred to as the Discord Voice WebSocket latency and is
+        an analogue of user's voice latencies as seen in the Discord client.
+        """
+        ws = self.ws
+        return float("inf") if not ws else ws.latency
+
+    @property
+    def average_latency(self):
+        """:class:`float`: Average of most recent 20 HEARTBEAT latencies in seconds."""
+        ws = self.ws
+        return float("inf") if not ws else ws.average_latency
 
     async def connect(self, *, reconnect=True, _tries=0, do_handshake=True):
         log.info('Connecting to voice...')
@@ -341,7 +357,6 @@ class VoiceClient:
         self.checked_add('_lite_nonce', 1, 4294967295)
 
         return header + box.encrypt(bytes(data), bytes(nonce)).ciphertext + nonce[:4]
-
 
     def play(self, source, *, after=None):
         """Plays an :class:`AudioSource`.

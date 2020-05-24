@@ -792,7 +792,7 @@ class BotBase(GroupMixin):
             except TypeError:
                 # It's possible that a generator raised this exception.  Don't
                 # replace it with our own error if that's the case.
-                if isinstance(ret, collections.Iterable):
+                if isinstance(ret, collections.abc.Iterable):
                     raise
 
                 raise TypeError("command_prefix must be plain string, iterable of strings, or callable "
@@ -890,6 +890,8 @@ class BotBase(GroupMixin):
             try:
                 if await self.can_run(ctx, call_once=True):
                     await ctx.command.invoke(ctx)
+                else:
+                    raise errors.CheckFailure('The global check once functions failed.')
             except errors.CommandError as exc:
                 await ctx.command.dispatch_error(ctx, exc)
             else:

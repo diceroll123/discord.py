@@ -40,12 +40,17 @@ log = logging.getLogger(__name__)
 
 async def json_or_text(response):
     text = await response.text(encoding='utf-8')
-    if response.headers['content-type'] == 'application/json':
-        return json.loads(text)
+    try:
+        if response.headers['content-type'] == 'application/json':
+            return json.loads(text)
+    except KeyError:
+        # Thanks Cloudflare
+        pass
+
     return text
 
 class Route:
-    BASE = 'https://discordapp.com/api/v7'
+    BASE = 'https://discord.com/api/v7'
 
     def __init__(self, method, path, **parameters):
         self.path = path
@@ -179,7 +184,7 @@ class HTTPClient:
 
                     # we are being rate limited
                     if r.status == 429:
-                        if not isinstance(data, dict):
+                        if not r.headers.get('Via'):
                             # Banned by Cloudflare more than likely.
                             raise HTTPException(r, data)
 
@@ -305,7 +310,7 @@ class HTTPClient:
 
         return self.request(Route('POST', '/users/@me/channels'), json=payload)
 
-    def send_message(self, channel_id, content, *, tts=False, embed=None, nonce=None):
+    def send_message(self, channel_id, content, *, tts=False, embed=None, nonce=None, allowed_mentions=None):
         r = Route('POST', '/channels/{channel_id}/messages', channel_id=channel_id)
         payload = {}
 
@@ -321,12 +326,15 @@ class HTTPClient:
         if nonce:
             payload['nonce'] = nonce
 
+        if allowed_mentions:
+            payload['allowed_mentions'] = allowed_mentions
+
         return self.request(r, json=payload)
 
     def send_typing(self, channel_id):
         return self.request(Route('POST', '/channels/{channel_id}/typing', channel_id=channel_id))
 
-    def send_files(self, channel_id, *, files, content=None, tts=False, embed=None, nonce=None):
+    def send_files(self, channel_id, *, files, content=None, tts=False, embed=None, nonce=None, allowed_mentions=None):
         r = Route('POST', '/channels/{channel_id}/messages', channel_id=channel_id)
         form = aiohttp.FormData()
 
@@ -337,6 +345,8 @@ class HTTPClient:
             payload['embed'] = embed
         if nonce:
             payload['nonce'] = nonce
+        if allowed_mentions:
+            payload['allowed_mentions'] = allowed_mentions
 
         form.add_field('payload_json', utils.to_json(payload))
         if len(files) == 1:
@@ -610,7 +620,8 @@ class HTTPClient:
                       'afk_channel_id', 'splash', 'verification_level',
                       'system_channel_id', 'default_message_notifications',
                       'description', 'explicit_content_filter', 'banner',
-                      'system_channel_flags')
+                      'system_channel_flags', 'rules_channel_id',
+                      'public_updates_channel_id')
 
         payload = {
             k: v for k, v in fields.items() if k in valid_keys
@@ -647,10 +658,11 @@ class HTTPClient:
     def get_member(self, guild_id, member_id):
         return self.request(Route('GET', '/guilds/{guild_id}/members/{member_id}', guild_id=guild_id, member_id=member_id))
 
-    def prune_members(self, guild_id, days, compute_prune_count, *, reason=None):
+    def prune_members(self, guild_id, days, compute_prune_count, roles, *, reason=None):
         params = {
             'days': days,
-            'compute_prune_count': 'true' if compute_prune_count else 'false'
+            'compute_prune_count': 'true' if compute_prune_count else 'false',
+            'include_roles': roles
         }
         return self.request(Route('POST', '/guilds/{guild_id}/prune', guild_id=guild_id), params=params, reason=reason)
 

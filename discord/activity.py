@@ -549,14 +549,14 @@ class Spotify:
     def colour(self):
         """Returns the Spotify integration colour, as a :class:`Colour`.
 
-        There is an alias for this named :meth:`color`"""
+        There is an alias for this named :attr:`color`"""
         return Colour(0x1db954)
 
     @property
     def color(self):
         """Returns the Spotify integration colour, as a :class:`Colour`.
 
-        There is an alias for this named :meth:`colour`"""
+        There is an alias for this named :attr:`colour`"""
         return self.colour
 
     def to_dict(self):
@@ -678,7 +678,7 @@ class CustomActivity(BaseActivity):
     -----------
     name: Optional[:class:`str`]
         The custom activity's name.
-    emoji: Optional[`:class:`PartialEmoji`]
+    emoji: Optional[:class:`PartialEmoji`]
         The emoji to pass to the activity, if any.
     """
 

@@ -11,6 +11,56 @@ Changelog
 This page keeps a detailed human friendly rendering of what's new and changed
 in specific versions.
 
+.. _vp1p3p3:
+
+v1.3.3
+--------
+
+Bug Fixes
+~~~~~~~~~~~~
+
+- Change default WS close to 4000 instead of 1000.
+    - The previous close code caused sessions to be invalidated at a higher frequency than desired.
+
+- Fix ``None`` appearing in ``Member.activities``. (:issue:`2619`)
+
+.. _vp1p3p2:
+
+v1.3.2
+---------
+
+Another minor bug fix release.
+
+Bug Fixes
+~~~~~~~~~~~
+
+- Higher the wait time during the ``GUILD_CREATE`` stream before ``on_ready`` is fired for :class:`AutoShardedClient`.
+- :func:`on_voice_state_update` now uses the inner ``member`` payload which should make it more reliable.
+- Fix various Cloudflare handling errors (:issue:`2572`, :issue:`2544`)
+- Fix crashes if :attr:`Message.guild` is :class:`Object` instead of :class:`Guild`.
+- Fix :meth:`Webhook.send` returning an empty string instead of ``None`` when ``wait=False``.
+- Fix invalid format specifier in webhook state (:issue:`2570`)
+- |commands| Passing invalid permissions to permission related checks now raises ``TypeError``.
+
+.. _vp1p3p1:
+
+v1.3.1
+--------
+
+Minor bug fix release.
+
+Bug Fixes
+~~~~~~~~~~~
+
+- Fix fetching invites in guilds that the user is not in.
+- Fix the channel returned from :meth:`Client.fetch_channel` raising when sending messages. (:issue:`2531`)
+
+Miscellaneous
+~~~~~~~~~~~~~~
+
+- Fix compatibility warnings when using the Python 3.9 alpha.
+- Change the unknown event logging from WARNING to DEBUG to reduce noise.
+
 .. _vp1p3p0:
 
 v1.3.0
@@ -126,6 +176,7 @@ Miscellaneous
 - The performance of :attr:`Member.roles` has improved due to usage of caching to avoid surprising performance traps.
 - The GC is manually triggered during things that cause large deallocations (such as guild removal) to prevent memory fragmentation.
 - There have been many changes to the documentation for fixes both for usability, correctness, and to fix some linter errors. Thanks to everyone who contributed to those.
+- The loading of the opus module has been delayed which would make the result of :func:`opus.is_loaded` somewhat surprising.
 - |commands| Usernames prefixed with @ inside DMs will properly convert using the :class:`User` converter. (:issue:`2498`)
 - |tasks| The task sleeping time will now take into consideration the amount of time the task body has taken before sleeping. (:issue:`2516`)
 

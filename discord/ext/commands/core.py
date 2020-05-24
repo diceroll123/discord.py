@@ -49,6 +49,8 @@ __all__ = (
     'has_any_role',
     'check',
     'check_any',
+    'before_invoke',
+    'after_invoke',
     'bot_has_role',
     'bot_has_permissions',
     'bot_has_any_role',
@@ -145,7 +147,7 @@ class Command(_BaseCommand):
         then the first line of the long help text is used instead.
     usage: :class:`str`
         A replacement for arguments in the default help text.
-    aliases: :class:`list`
+    aliases: Union[:class:`list`, :class:`tuple`]
         The list of aliases the command can be invoked under.
     enabled: :class:`bool`
         A boolean that indicates if the command is currently enabled.
@@ -232,7 +234,7 @@ class Command(_BaseCommand):
         self.aliases = kwargs.get('aliases', [])
 
         if not isinstance(self.aliases, (list, tuple)):
-            raise TypeError("Aliases of a command must be a list of strings.")
+            raise TypeError("Aliases of a command must be a list or a tuple of strings.")
 
         self.description = inspect.cleandoc(kwargs.get('description', ''))
         self.hidden = kwargs.get('hidden', False)
@@ -266,8 +268,20 @@ class Command(_BaseCommand):
         # bandaid for the fact that sometimes parent can be the bot instance
         parent = kwargs.get('parent')
         self.parent = parent if isinstance(parent, _BaseCommand) else None
-        self._before_invoke = None
-        self._after_invoke = None
+
+        try:
+            before_invoke = func.__before_invoke__
+        except AttributeError:
+            self._before_invoke = None
+        else:
+            self.before_invoke(before_invoke)
+
+        try:
+            after_invoke = func.__after_invoke__
+        except AttributeError:
+            self._after_invoke = None
+        else:
+            self.after_invoke(after_invoke)
 
     @property
     def callback(self):
@@ -695,10 +709,18 @@ class Command(_BaseCommand):
         # first, call the command local hook:
         cog = self.cog
         if self._before_invoke is not None:
-            if cog is None:
-                await self._before_invoke(ctx)
+            try:
+                instance = self._before_invoke.__self__
+                # should be cog if @commands.before_invoke is used
+            except AttributeError:
+                # __self__ only exists for methods, not functions
+                # however, if @command.before_invoke is used, it will be a function
+                if self.cog:
+                    await self._before_invoke(cog, ctx)
+                else:
+                    await self._before_invoke(ctx)
             else:
-                await self._before_invoke(cog, ctx)
+                await self._before_invoke(instance, ctx)
 
         # call the cog local hook if applicable:
         if cog is not None:
@@ -714,10 +736,15 @@ class Command(_BaseCommand):
     async def call_after_hooks(self, ctx):
         cog = self.cog
         if self._after_invoke is not None:
-            if cog is None:
-                await self._after_invoke(ctx)
+            try:
+                instance = self._after_invoke.__self__
+            except AttributeError:
+                if self.cog:
+                    await self._after_invoke(cog, ctx)
+                else:
+                    await self._after_invoke(ctx)
             else:
-                await self._after_invoke(cog, ctx)
+                await self._after_invoke(instance, ctx)
 
         # call the cog local hook if applicable:
         if cog is not None:
@@ -1109,8 +1136,12 @@ class GroupMixin:
         return command
 
     def walk_commands(self):
-        """An iterator that recursively walks through all commands and subcommands."""
-        for command in tuple(self.all_commands.values()):
+        """An iterator that recursively walks through all commands and subcommands.
+
+        .. versionchanged:: 1.4
+            Duplicates due to aliases are no longer returned
+        """
+        for command in self.commands:
             yield command
             if isinstance(command, GroupMixin):
                 yield from command.walk_commands()
@@ -1424,7 +1455,7 @@ def check(predicate):
     return decorator
 
 def check_any(*checks):
-    """A :func:`check` that is added that checks if any of the checks passed
+    r"""A :func:`check` that is added that checks if any of the checks passed
     will pass, i.e. using logical OR.
 
     If all checks fail then :exc:`.CheckAnyFailure` is raised to signal the failure.
@@ -1657,11 +1688,16 @@ def has_permissions(**perms):
             await ctx.send('You can manage messages.')
 
     """
+
+    invalid = set(perms) - set(discord.Permissions.VALID_FLAGS)
+    if invalid:
+        raise TypeError('Invalid permission(s): %s' % (', '.join(invalid)))
+
     def predicate(ctx):
         ch = ctx.channel
         permissions = ch.permissions_for(ctx.author)
 
-        missing = [perm for perm, value in perms.items() if getattr(permissions, perm, None) != value]
+        missing = [perm for perm, value in perms.items() if getattr(permissions, perm) != value]
 
         if not missing:
             return True
@@ -1677,12 +1713,17 @@ def bot_has_permissions(**perms):
     This check raises a special exception, :exc:`.BotMissingPermissions`
     that is inherited from :exc:`.CheckFailure`.
     """
+
+    invalid = set(perms) - set(discord.Permissions.VALID_FLAGS)
+    if invalid:
+        raise TypeError('Invalid permission(s): %s' % (', '.join(invalid)))
+
     def predicate(ctx):
         guild = ctx.guild
         me = guild.me if guild is not None else ctx.bot.user
         permissions = ctx.channel.permissions_for(me)
 
-        missing = [perm for perm, value in perms.items() if getattr(permissions, perm, None) != value]
+        missing = [perm for perm, value in perms.items() if getattr(permissions, perm) != value]
 
         if not missing:
             return True
@@ -1700,12 +1741,17 @@ def has_guild_permissions(**perms):
 
     .. versionadded:: 1.3
     """
+
+    invalid = set(perms) - set(discord.Permissions.VALID_FLAGS)
+    if invalid:
+        raise TypeError('Invalid permission(s): %s' % (', '.join(invalid)))
+
     def predicate(ctx):
         if not ctx.guild:
             raise NoPrivateMessage
 
         permissions = ctx.author.guild_permissions
-        missing = [perm for perm, value in perms.items() if getattr(permissions, perm, None) != value]
+        missing = [perm for perm, value in perms.items() if getattr(permissions, perm) != value]
 
         if not missing:
             return True
@@ -1720,12 +1766,17 @@ def bot_has_guild_permissions(**perms):
 
     .. versionadded:: 1.3
     """
+
+    invalid = set(perms) - set(discord.Permissions.VALID_FLAGS)
+    if invalid:
+        raise TypeError('Invalid permission(s): %s' % (', '.join(invalid)))
+
     def predicate(ctx):
         if not ctx.guild:
             raise NoPrivateMessage
 
         permissions = ctx.me.guild_permissions
-        missing = [perm for perm, value in perms.items() if getattr(permissions, perm, None) != value]
+        missing = [perm for perm, value in perms.items() if getattr(permissions, perm) != value]
 
         if not missing:
             return True
@@ -1866,5 +1917,67 @@ def max_concurrency(number, per=BucketType.default, *, wait=False):
             func._max_concurrency = value
         else:
             func.__commands_max_concurrency__ = value
+        return func
+    return decorator
+
+def before_invoke(coro):
+    """A decorator that registers a coroutine as a pre-invoke hook.
+
+    This allows you to refer to one before invoke hook for several commands that
+    do not have to be within the same cog.
+
+    .. versionadded:: 1.4
+
+    Example
+    ---------
+
+    .. code-block:: python3
+
+        async def record_usage(ctx):
+            print(ctx.author, 'used', ctx.command, 'at', ctx.message.created_at)
+
+        @bot.command()
+        @commands.before_invoke(record_usage)
+        async def who(ctx): # Output: <User> used who at <Time>
+            await ctx.send('i am a bot')
+
+        class What(commands.Cog):
+
+            @commands.before_invoke(record_usage)
+            @commands.command()
+            async def when(self, ctx): # Output: <User> used when at <Time>
+                await ctx.send('and i have existed since {}'.format(ctx.bot.user.created_at))
+
+            @commands.command()
+            async def where(self, ctx): # Output: <Nothing>
+                await ctx.send('on Discord')
+
+            @commands.command()
+            async def why(self, ctx): # Output: <Nothing>
+                await ctx.send('because someone made me')
+
+        bot.add_cog(What())
+    """
+    def decorator(func):
+        if isinstance(func, Command):
+            func.before_invoke(coro)
+        else:
+            func.__before_invoke__ = coro
+        return func
+    return decorator
+
+def after_invoke(coro):
+    """A decorator that registers a coroutine as a post-invoke hook.
+
+    This allows you to refer to one after invoke hook for several commands that
+    do not have to be within the same cog.
+
+    .. versionadded:: 1.4
+    """
+    def decorator(func):
+        if isinstance(func, Command):
+            func.after_invoke(coro)
+        else:
+            func.__after_invoke__ = coro
         return func
     return decorator
