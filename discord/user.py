@@ -474,11 +474,7 @@ class ClientUser(BaseUser):
         except KeyError:
             avatar = self.avatar
         else:
-            if avatar_bytes is not None:
-                avatar = _bytes_to_base64_data(avatar_bytes)
-            else:
-                avatar = None
-
+            avatar = None if avatar_bytes is None else _bytes_to_base64_data(avatar_bytes)
         not_bot_account = not self.bot
         password = fields.get('password')
         if not_bot_account and password is None:

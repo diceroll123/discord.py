@@ -141,11 +141,7 @@ class ConnectionState:
 
         status = options.get('status', None)
         if status:
-            if status is Status.offline:
-                status = 'invisible'
-            else:
-                status = str(status)
-
+            status = 'invisible' if status is Status.offline else str(status)
         intents = options.get('intents', None)
         if intents is not None:
             if not isinstance(intents, Intents):

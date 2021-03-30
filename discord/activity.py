@@ -189,10 +189,7 @@ class Activity(BaseActivity):
         self.session_id = kwargs.pop('session_id', None)
         self.type = try_enum(ActivityType, kwargs.pop('type', -1))
         emoji = kwargs.pop('emoji', None)
-        if emoji is not None:
-            self.emoji = PartialEmoji.from_dict(emoji)
-        else:
-            self.emoji = None
+        self.emoji = PartialEmoji.from_dict(emoji) if emoji is not None else None
 
     def __repr__(self):
         attrs = (
@@ -737,12 +734,12 @@ class CustomActivity(BaseActivity):
         return hash((self.name, str(self.emoji)))
 
     def __str__(self):
-        if self.emoji:
-            if self.name:
-                return '%s %s' % (self.emoji, self.name)
-            return str(self.emoji)
-        else:
+        if not self.emoji:
             return str(self.name)
+
+        if self.name:
+            return '%s %s' % (self.emoji, self.name)
+        return str(self.emoji)
 
     def __repr__(self):
         return '<CustomActivity name={0.name!r} emoji={0.emoji!r}>'.format(self)

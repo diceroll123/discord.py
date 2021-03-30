@@ -182,11 +182,10 @@ class ReactionIterator(_AsyncIterator):
                 self.limit -= retrieve
                 self.after = Object(id=int(data[-1]['id']))
 
-            if self.guild is None or isinstance(self.guild, Object):
-                for element in reversed(data):
+            for element in reversed(data):
+                if self.guild is None or isinstance(self.guild, Object):
                     await self.users.put(User(state=self.state, data=element))
-            else:
-                for element in reversed(data):
+                else:
                     member_id = int(element['id'])
                     member = self.guild.get_member(member_id)
                     if member is not None:
@@ -238,11 +237,7 @@ class HistoryIterator(_AsyncIterator):
         if isinstance(around, datetime.datetime):
             around = Object(id=time_snowflake(around))
 
-        if oldest_first is None:
-            self.reverse = after is not None
-        else:
-            self.reverse = oldest_first
-
+        self.reverse = after is not None if oldest_first is None else oldest_first
         self.messageable = messageable
         self.limit = limit
         self.before = before
@@ -379,11 +374,7 @@ class AuditLogIterator(_AsyncIterator):
             after = Object(id=time_snowflake(after, high=True))
 
 
-        if oldest_first is None:
-            self.reverse = after is not None
-        else:
-            self.reverse = oldest_first
-
+        self.reverse = after is not None if oldest_first is None else oldest_first
         self.guild = guild
         self.loop = guild._state.loop
         self.request = guild._state.http.get_audit_logs
@@ -635,20 +626,21 @@ class MemberIterator(_AsyncIterator):
         return r > 0
 
     async def fill_members(self):
-        if self._get_retrieve():
-            after = self.after.id if self.after else None
-            data = await self.get_members(self.guild.id, self.retrieve, after)
-            if not data:
-                # no data, terminate
-                return
+        if not self._get_retrieve():
+            return
+        after = self.after.id if self.after else None
+        data = await self.get_members(self.guild.id, self.retrieve, after)
+        if not data:
+            # no data, terminate
+            return
 
-            if len(data) < 1000:
-                self.limit = 0 # terminate loop
+        if len(data) < 1000:
+            self.limit = 0 # terminate loop
 
-            self.after = Object(id=int(data[-1]['user']['id']))
+        self.after = Object(id=int(data[-1]['user']['id']))
 
-            for element in reversed(data):
-                await self.members.put(self.create_member(element))
+        for element in reversed(data):
+            await self.members.put(self.create_member(element))
 
     def create_member(self, data):
         from .member import Member
