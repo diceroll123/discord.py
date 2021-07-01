@@ -317,7 +317,7 @@ def select(
 
     def decorator(func: ItemCallbackType) -> ItemCallbackType:
         if not inspect.iscoroutinefunction(func):
-            raise TypeError('button function must be a coroutine function')
+            raise TypeError('select function must be a coroutine function')
 
         func.__discord_ui_model_type__ = Select
         func.__discord_ui_model_kwargs__ = {
