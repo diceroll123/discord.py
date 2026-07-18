@@ -277,8 +277,7 @@ class Attachment(Hashable):
 
     def is_spoiler(self) -> bool:
         """:class:`bool`: Whether this attachment contains a spoiler."""
-        # The flag is technically always present but no harm to check both
-        return self.filename.startswith('SPOILER_') or self.flags.spoiler
+        return self.flags.spoiler
 
     def is_voice_message(self) -> bool:
         """:class:`bool`: Whether this attachment is a voice message."""
