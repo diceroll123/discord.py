@@ -493,6 +493,10 @@ class Parameter:
         The underlying type of this parameter.
     channel_types: List[:class:`~discord.ChannelType`]
         The channel types that are allowed for this parameter.
+    file_types: List[:class:`str`]
+        The file types that are allowed for this parameter.
+
+        .. versionadded:: 2.8
     min_value: Optional[Union[:class:`int`, :class:`float`]]
         The minimum supported value for this parameter.
     max_value: Optional[Union[:class:`int`, :class:`float`]]
@@ -565,6 +569,13 @@ class Parameter:
         if channel_types is MISSING:
             return []
         return channel_types.copy()
+
+    @property
+    def file_types(self) -> List[str]:
+        file_types = self.__parent.file_types
+        if file_types is MISSING:
+            return []
+        return file_types.copy()
 
     @property
     def min_value(self) -> Optional[Union[int, float]]:

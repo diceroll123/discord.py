@@ -65,6 +65,7 @@ __all__ = (
     'Transform',
     'Timestamp',
     'Range',
+    'FileTypes',
 )
 
 T = TypeVar('T')
@@ -88,6 +89,7 @@ class CommandParameter:
     choices: List[Choice[Union[str, int, float]]] = MISSING
     type: AppCommandOptionType = MISSING
     channel_types: List[ChannelType] = MISSING
+    file_types: List[str] = MISSING
     min_value: Optional[Union[int, float]] = None
     max_value: Optional[Union[int, float]] = None
     autocomplete: Optional[Callable[..., Coroutine[Any, Any, Any]]] = None
@@ -141,6 +143,8 @@ class CommandParameter:
             base['choices'] = [choice.to_dict() for choice in self.choices]
         if self.channel_types:
             base['channel_types'] = [t.value for t in self.channel_types]
+        if self.file_types:
+            base['file_types'] = self.file_types
         if self.autocomplete:
             base['autocomplete'] = True
 
@@ -258,6 +262,20 @@ class Transformer(Generic[ClientT]):
         This must be a :obj:`property`.
 
         Defaults to an empty list.
+        """
+        return []
+
+    @property
+    def file_types(self) -> List[str]:
+        """List[:class:`str`]: A list of allowed file types for this parameter.
+
+        Only valid if the :meth:`type` returns :attr:`~discord.AppCommandOptionType.attachment`.
+
+        This must be a :obj:`property`.
+
+        Defaults to an empty list.
+
+        .. versionadded:: 2.8
         """
         return []
 
@@ -392,6 +410,16 @@ class RangeTransformer(IdentityTransformer):
         return self._max
 
 
+class AttachmentTransformer(IdentityTransformer):
+    def __init__(self, file_types: List[str]) -> None:
+        super().__init__(AppCommandOptionType.attachment)
+        self._file_types: List[str] = file_types
+
+    @property
+    def file_types(self) -> List[str]:
+        return self._file_types
+
+
 class LiteralTransformer(IdentityTransformer):
     def __init__(self, values: Tuple[Any, ...]) -> None:
         first = type(values[0])
@@ -513,6 +541,7 @@ class InlineTransformer(Transformer[ClientT]):
 if TYPE_CHECKING:
     from typing_extensions import Annotated as Transform
     from typing_extensions import Annotated as Range
+    from typing_extensions import Annotated as FileTypes
 else:
 
     class Transform:
@@ -613,6 +642,51 @@ else:
                 max=cast(max) if max is not None else None,
             )
             return transformer
+
+    class FileTypes:
+        """A type annotation that can be applied to a :class:`~discord.Attachment` parameter to
+        restrict the allowed file types that can be uploaded.
+
+        Each argument is either one of the ``"image"``, ``"video"``, or ``"audio"`` file groups,
+        or a dot-prefixed file extension such as ``".pdf"``. Up to 10 entries are allowed.
+
+        During type checking time this is equivalent to :obj:`typing.Annotated` so type checkers
+        understand the intent of the code.
+
+        .. versionadded:: 2.8
+
+        .. note::
+
+            This only checks the file extension against the filename and does not inspect the
+            file contents. You are still responsible for validating the actual contents of the file.
+
+        Examples
+        ----------
+
+        .. code-block:: python3
+
+            @app_commands.command()
+            async def upload(interaction: discord.Interaction, file: app_commands.FileTypes[discord.Attachment, "image", ".pdf"]):
+                await interaction.response.send_message(f'Received {file.filename}')
+        """
+
+        def __class_getitem__(cls, obj) -> AttachmentTransformer:
+            if not isinstance(obj, tuple):
+                raise TypeError(f'expected tuple for arguments, received {obj.__class__.__name__} instead')
+
+            if len(obj) < 2:
+                raise TypeError('FileTypes accepts the annotated type followed by one or more file type entries')
+
+            file_types = obj[1:]
+
+            if len(file_types) > 10:
+                raise TypeError('FileTypes only accepts up to 10 entries')
+
+            for entry in file_types:
+                if not isinstance(entry, str):
+                    raise TypeError(f'FileTypes entries must be str, received {entry.__class__.__name__} instead')
+
+            return AttachmentTransformer(list(file_types))
 
 
 class MemberTransformer(Transformer[ClientT]):
@@ -904,6 +978,9 @@ def annotation_to_parameter(annotation: Any, parameter: inspect.Parameter) -> Co
 
     if type is AppCommandOptionType.channel:
         result.channel_types = inner.channel_types
+
+    if type is AppCommandOptionType.attachment:
+        result.file_types = inner.file_types
 
     if parameter.kind in (parameter.POSITIONAL_ONLY, parameter.VAR_KEYWORD, parameter.VAR_POSITIONAL):
         raise TypeError(f'unsupported parameter kind in callback: {parameter.kind!s}')

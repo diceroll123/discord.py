@@ -94,12 +94,18 @@ class _ChannelApplicationCommandOptionChoice(_BaseApplicationCommandOption):
     channel_types: NotRequired[List[ChannelType]]
 
 
+class _AttachmentApplicationCommandOptionChoice(_BaseValueApplicationCommandOption):
+    type: Literal[11]
+    file_types: NotRequired[List[str]]
+
+
 class _NonChannelSnowflakeApplicationCommandOptionChoice(_BaseValueApplicationCommandOption):
-    type: Literal[6, 8, 9, 11]
+    type: Literal[6, 8, 9]
 
 
 _SnowflakeApplicationCommandOptionChoice = Union[
     _ChannelApplicationCommandOptionChoice,
+    _AttachmentApplicationCommandOptionChoice,
     _NonChannelSnowflakeApplicationCommandOptionChoice,
 ]
 

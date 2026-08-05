@@ -72,6 +72,13 @@ class FileUpload(Item[V]):
     required: :class:`bool`
         Whether this component is required to be filled before submitting the modal.
         Defaults to ``True``.
+    file_types: Optional[List[:class:`str`]]
+        The allowed file types that can be uploaded. Each entry is either one of
+        ``"image"``, ``"video"``, or ``"audio"`` file groups, or a dot-prefixed file
+        extension such as ``".pdf"``. Up to 10 entries. Defaults to ``None`` which
+        allows all file types.
+
+        .. versionadded:: 2.8
     """
 
     __item_repr_attributes__: Tuple[str, ...] = (
@@ -80,6 +87,7 @@ class FileUpload(Item[V]):
         'max_values',
         'min_values',
         'required',
+        'file_types',
     )
 
     def __init__(
@@ -90,6 +98,7 @@ class FileUpload(Item[V]):
         min_values: Optional[int] = None,
         max_values: Optional[int] = None,
         id: Optional[int] = None,
+        file_types: Optional[List[str]] = None,
     ) -> None:
         super().__init__()
         self._provided_custom_id = custom_id is not MISSING
@@ -103,6 +112,7 @@ class FileUpload(Item[V]):
             max_values=max_values,
             min_values=min_values,
             required=required,
+            file_types=list(file_types) if file_types is not None else [],
         )
         self.id = id
         self._values: List[Attachment] = []
@@ -166,6 +176,15 @@ class FileUpload(Item[V]):
         self._underlying.required = bool(value)
 
     @property
+    def file_types(self) -> List[str]:
+        """List[:class:`str`]: The allowed file types that can be uploaded."""
+        return self._underlying.file_types
+
+    @file_types.setter
+    def file_types(self, value: List[str]) -> None:
+        self._underlying.file_types = list(value)
+
+    @property
     def width(self) -> int:
         return 5
 
@@ -188,6 +207,7 @@ class FileUpload(Item[V]):
             max_values=component.max_values,
             min_values=component.min_values,
             required=component.required,
+            file_types=component.file_types,
         )
         return self
 

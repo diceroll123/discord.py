@@ -1169,6 +1169,14 @@ Range
 .. autoclass:: discord.app_commands.Range
     :members:
 
+FileTypes
+++++++++++
+
+.. attributetable:: discord.app_commands.FileTypes
+
+.. autoclass:: discord.app_commands.FileTypes
+    :members:
+
 Timestamp
 ++++++++++
 
